@@ -29,9 +29,13 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(background_agent_api);
 
-    // Run step
+    // Build step for Railway Dockerfile
+    const build_step = b.step("background-agent-api", "Build Background Agent API (build only)");
+    build_step.dependOn(&background_agent_api.step);
+
+    // Run step (named "run" to avoid conflict)
     const run = b.addRunArtifact(background_agent_api);
     if (b.args) |args| run.addArgs(args);
-    const run_step = b.step("background-agent-api", "Run Background Agent API");
+    const run_step = b.step("run", "Run Background Agent API");
     run_step.dependOn(&run.step);
 }
