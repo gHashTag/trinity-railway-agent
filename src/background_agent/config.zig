@@ -35,7 +35,8 @@ fn getEnvOr(allocator: Allocator, key: []const u8, default_value: []const u8) ![
 
 /// Validate configuration at runtime
 pub fn validateConfig(config: *const Config) !void {
-    if (config.databaseUrl.len == 0) {
+    // DATABASE_URL is required only in non-local mode
+    if (!config.localMode and config.databaseUrl.len == 0) {
         return error.MissingEnv;
     }
     // API token and auth secret are optional for Railway health checks
@@ -47,13 +48,22 @@ pub fn loadConfig(allocator: Allocator) !Config {
     const port_str = try getEnvOr(allocator, "PORT", "3000");
     const port = try std.fmt.parseInt(u16, port_str, 10);
 
+    // Check local mode first to decide what's required
+    const local_mode = try isLocalMode(allocator);
+
+    // DATABASE_URL is required in Railway mode, optional in local mode
+    const database_url = if (local_mode)
+        getEnvOr(allocator, "DATABASE_URL", "") catch ""
+    else
+        try getEnv(allocator, "DATABASE_URL");
+
     var config = Config{
         .port = port,
         .railwayApiToken = getEnvOr(allocator, "RAILWAY_API_TOKEN", "") catch "",
-        .railwayProjectId = try getEnvOr(allocator, "RAILWAY_PROJECT_ID", ""),
+        .railwayProjectId = getEnvOr(allocator, "RAILWAY_PROJECT_ID", "") catch "",
         .authSecret = getEnvOr(allocator, "AUTH_SECRET", "") catch "",
-        .databaseUrl = try getEnv(allocator, "DATABASE_URL"),
-        .localMode = try isLocalMode(allocator),
+        .databaseUrl = database_url,
+        .localMode = local_mode,
     };
 
     try validateConfig(&config);

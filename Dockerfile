@@ -44,7 +44,6 @@ USER trinity
 EXPOSE 3000
 
 ENV PORT=3000
-ENV LOCAL_MODE=1
 
 # Simple health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
