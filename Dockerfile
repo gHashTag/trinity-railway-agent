@@ -20,16 +20,8 @@ ENV PATH="/usr/local/zig-x86_64-linux-0.15.2:${PATH}"
 
 WORKDIR /app
 
-# Copy only essential files for building background-agent-api
-COPY build.zig ./
-COPY src/background_agent/ ./src/background_agent/
-COPY src/vsa/ ./src/vsa/
-COPY src/vm.zig ./src/vm.zig
-COPY src/hybrid.zig ./src/hybrid.zig
-COPY src/c_api.zig ./src/c_api.zig
-COPY src/science.zig ./src/science.zig
-COPY src/bench_cifar10.zig ./src/bench_cifar10.zig
-COPY src/vsa_jit.zig ./src/vsa_jit.zig
+# Copy all source files
+COPY . ./
 
 # Build background-agent-api with ReleaseSafe
 RUN zig build -Doptimize=ReleaseSafe background-agent-api
