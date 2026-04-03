@@ -52,7 +52,8 @@ EXPOSE 3000
 ENV PORT=3000
 
 # Health check: use curl to test /health endpoint
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:3000/health || exit 1
 
-ENTRYPOINT ["/app/background-agent-api"]
+# Use shell wrapper to capture both stdout and stderr
+CMD ["/app/background-agent-api"]

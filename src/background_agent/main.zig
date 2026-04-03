@@ -13,8 +13,13 @@ const PostgresClient = @import("./db/client.zig").PostgresClient;
 const allocator = std.heap.page_allocator;
 
 pub fn main() !u8 {
+    std.log.info("Starting Background Agent API...", .{});
+
     // Load configuration
-    const config = try loadConfig(allocator);
+    const config = loadConfig(allocator) catch |err| {
+        std.log.err("Failed to load config: {}", .{err});
+        return 1;
+    };
     std.log.info("Loaded config: port={}, local_mode={}", .{ config.port, config.localMode });
 
     // Initialize database client
@@ -24,8 +29,11 @@ pub fn main() !u8 {
     };
 
     if (!config.localMode) {
-        try PostgresClient.connect(&db_client, config.databaseUrl);
-        std.log.info("Connected to database", .{});
+        PostgresClient.connect(&db_client, config.databaseUrl) catch |err| {
+            std.log.err("Failed to connect to database: {}", .{err});
+            std.log.warn("Continuing without database connection...", .{});
+        };
+        std.log.info("Database connection status: {}", .{db_client.stream != null});
     } else {
         std.log.info("Running in local mode - no database connection", .{});
     }
@@ -33,11 +41,18 @@ pub fn main() !u8 {
     defer PostgresClient.close(&db_client);
 
     // Initialize server
-    var server = try server_module.init(allocator, config, db_client, config.authSecret);
+    var server = server_module.init(allocator, config, db_client, config.authSecret) catch |err| {
+        std.log.err("Failed to initialize server: {}", .{err});
+        return 1;
+    };
     defer serverStop(&server);
 
     // Start server
-    try serverStart(&server);
+    std.log.info("Starting server...", .{});
+    serverStart(&server) catch |err| {
+        std.log.err("Server failed: {}", .{err});
+        return 1;
+    };
 
     return 0;
 }

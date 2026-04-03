@@ -78,6 +78,7 @@ pub const Server = struct {
         self.running = true;
 
         std.log.info("Background agent listening on {any}", .{self.address});
+        std.log.info("Server ready to accept connections on port {}", .{self.config.port});
 
         while (self.running) {
             const connection = self.server.accept() catch |err| {
