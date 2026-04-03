@@ -25,6 +25,8 @@ WORKDIR /app
 COPY . ./
 
 # Build background-agent-api with ReleaseSafe
+ENV LOCAL_MODE=1
+ENV DATABASE_URL=postgres://test:5432/test
 RUN zig build -Doptimize=ReleaseSafe
 
 # Stage 2: Runtime - Use Ubuntu minimal
