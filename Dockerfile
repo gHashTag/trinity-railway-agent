@@ -27,14 +27,17 @@ COPY . ./
 # Zig 0.15.2 outputs to .zig-cache/o/*/background-agent-api
 RUN zig build background-agent-api
 
+# Copy binary to artifacts directory for easier copying in runtime stage
+RUN mkdir -p /artifacts && find /app/.zig-cache -name "background-agent-api" -type f -exec cp {} /artifacts/background-agent-api \;
+
 # Stage 2: Runtime - Use Ubuntu minimal
 FROM ubuntu:24.04
 
 # Create user first
 RUN useradd -m -u 1001 trinity
 
-# Find and copy the binary from .zig-cache
-RUN find /app/.zig-cache -name "background-agent-api" -type f -exec cp {} /app/background-agent-api \;
+# Copy the binary from artifacts
+COPY --from=builder /artifacts/background-agent-api /app/background-agent-api
 
 USER trinity
 
