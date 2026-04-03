@@ -51,3 +51,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD test -f /app/background-agent-api || exit 1
 
 ENTRYPOINT ["/app/background-agent-api"]
+# Sat Apr  4 00:49:40 +07 2026
