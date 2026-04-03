@@ -27,7 +27,7 @@ pub const ServiceDeleteResponse = struct {
 };
 
 /// Railway error
-pub const Error = error{
+pub const RailwayError = error{
     ConnectionFailed,
     InvalidResponse,
     AuthFailed,
@@ -51,7 +51,7 @@ pub fn init(allocator: Allocator, api_token: []const u8, project_id: []const u8)
 }
 
 /// Create a Railway service
-pub fn createService(client: *RailwayClient, environment_id: []const u8, name: []const u8, image: []const u8) !ServiceCreateResponse {
+pub fn createService(client: *const RailwayClient, environment_id: []const u8, name: []const u8, image: []const u8) !ServiceCreateResponse {
     const input = ServiceCreateInput{
         .projectId = client.project_id,
         .environmentId = environment_id,
@@ -69,7 +69,7 @@ pub fn createService(client: *RailwayClient, environment_id: []const u8, name: [
 }
 
 /// Delete a Railway service
-pub fn deleteService(client: *RailwayClient, service_id: []const u8) !ServiceDeleteResponse {
+pub fn deleteService(client: *const RailwayClient, service_id: []const u8) !ServiceDeleteResponse {
     const mutation = try buildDeleteServiceMutation(service_id);
     defer client.allocator.free(mutation);
 
@@ -88,26 +88,23 @@ fn buildCreateServiceMutation(input: ServiceCreateInput) ![]const u8 {
     _ = input;
     return std.fmt.allocPrint(std.heap.page_allocator,
         \\mutation {{ serviceCreate(input: $input: ServiceCreateInput!) {{ id }} }}
-    );
+    , .{});
 }
 
 /// Build serviceDelete mutation
 fn buildDeleteServiceMutation(service_id: []const u8) ![]const u8 {
     return std.fmt.allocPrint(std.heap.page_allocator,
-        \\mutation {{ serviceDelete(id: $id: String!) {{ serviceId }} }}
-    , .{ service_id });
+        \\mutation {{ serviceDelete(id: "{s}") {{ serviceId }} }}
+    , .{service_id});
 }
 
 /// Send GraphQL request
-fn sendGraphQLRequest(client: *RailwayClient, query: []const u8) ![]const u8 {
+fn sendGraphQLRequest(client: *const RailwayClient, query: []const u8) ![]const u8 {
     // Build HTTP POST request
-    var request = std.ArrayList(u8).init(std.heap.page_allocator);
-    defer {
-        const bytes = request.toOwnedSlice();
-        std.heap.page_allocator.free(bytes);
-    }
+    var request = try std.ArrayList(u8).initCapacity(std.heap.page_allocator, 1024);
+    defer request.deinit(std.heap.page_allocator);
 
-    try request.writer().print(
+    try request.writer(std.heap.page_allocator).print(
         \\POST {s} HTTP/1.1\r
         \\Host: backboard.railway.app\r
         \\Content-Type: application/json\r
@@ -122,7 +119,7 @@ fn sendGraphQLRequest(client: *RailwayClient, query: []const u8) ![]const u8 {
     const address = try std.net.Address.parseIp("backboard.railway.app", 443);
 
     // Connect via TCP (HTTPS would need TLS)
-    var stream = try net.tcpConnectToAddress(client.allocator, address);
+    var stream = try net.tcpConnectToAddress(address);
     defer stream.close();
 
     // Send request

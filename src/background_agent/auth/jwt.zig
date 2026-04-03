@@ -3,8 +3,7 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const crypto = std.crypto;
-const hmac = crypto.auth.hmac.sha2;
+const HmacSha256 = std.crypto.auth.hmac.sha2.HmacSha256;
 
 /// JWT header (base64url encoded)
 const JWT_HEADER = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
@@ -72,22 +71,29 @@ fn base64UrlDecode(allocator: Allocator, input: []const u8) ![]u8 {
     // Add padding if needed
     const padding = (4 - (input.len % 4)) % 4;
     const padded = if (padding > 0) try allocator.alloc(u8, input.len + padding) else normalized;
+    defer if (padding > 0) allocator.free(padded);
+
     if (padding > 0) {
         @memcpy(padded[0..input.len], normalized);
         for (padded[input.len..]) |*c| c.* = '=';
-        allocator.free(normalized);
     }
 
-    return std.base64.standard.Decoder.decode(allocator, if (padding > 0) padded else normalized);
+    // Zig 0.15: decode requires pre-allocated dest buffer
+    const src = if (padding > 0) padded else normalized;
+    const decoder = std.base64.standard.Decoder;
+    const decoded_size = try decoder.calcSizeForSlice(src);
+    const result = try allocator.alloc(u8, decoded_size);
+    try decoder.decode(result, src);
+    return result;
 }
 
 /// Generate JWT token
 pub fn generateToken(allocator: Allocator, secret: []const u8, payload: Payload) ![]u8 {
     // Build JSON payload
-    var payload_json = std.ArrayList(u8).init(allocator);
+    var payload_json = try std.ArrayList(u8).initCapacity(allocator, 128);
     defer payload_json.deinit();
 
-    try payload_json.writer().print(
+    try payload_json.writer(allocator).print(
         \\{{"sub":"{s}","iat":{d},"exp":{d}}}
     , .{ payload.sub, payload.iat, payload.exp });
 
@@ -96,7 +102,7 @@ pub fn generateToken(allocator: Allocator, secret: []const u8, payload: Payload)
     errdefer allocator.free(payload_encoded);
 
     // Build signature input: header.payload
-    var signature_input = std.ArrayList(u8).init(allocator);
+    var signature_input = try std.ArrayList(u8).initCapacity(allocator, 256);
     defer signature_input.deinit();
 
     try signature_input.appendSlice(JWT_HEADER);
@@ -104,15 +110,15 @@ pub fn generateToken(allocator: Allocator, secret: []const u8, payload: Payload)
     try signature_input.appendSlice(payload_encoded);
 
     // Compute HMAC-SHA256 signature
-    var mac: [hmac.sha256.mac_length]u8 = undefined;
-    hmac.sha256.create(&mac, signature_input.items, secret);
+    var mac: [HmacSha256.mac_length]u8 = undefined;
+    HmacSha256.create(&mac, signature_input.items, secret);
 
     // Encode signature
     const signature_encoded = try base64UrlEncode(allocator, &mac);
     errdefer allocator.free(signature_encoded);
 
     // Build final token: header.payload.signature
-    var token = std.ArrayList(u8).init(allocator);
+    var token = try std.ArrayList(u8).initCapacity(allocator, 512);
     try token.appendSlice(JWT_HEADER);
     try token.append('.');
     try token.appendSlice(payload_encoded);
@@ -146,8 +152,8 @@ pub fn verifyToken(allocator: Allocator, token: []const u8, secret: []const u8) 
     defer allocator.free(provided_sig);
 
     // Compute expected signature
-    var expected_mac: [hmac.sha256.mac_length]u8 = undefined;
-    hmac.sha256.create(&expected_mac, signature_input.items, secret);
+    var expected_mac: [HmacSha256.mac_length]u8 = undefined;
+    HmacSha256.create(&expected_mac, signature_input.items, secret);
 
     // Verify signature
     if (!std.mem.eql(u8, provided_sig, &expected_mac)) {

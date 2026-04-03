@@ -1,0 +1,12 @@
+.{
+    .name = .trinity_railway_agent,
+    .version = "0.15.2",
+    .dependencies = .{
+        .zodd = .{
+            .url = "git+https://github.com/CogitatorTech/zodd#main",
+            .hash = "zodd-0.1.0-alpha.3-TJEk3Y7uAQDOkBXaPV_lynH1rF-eDwf9PnVc13MpPFym",
+        },
+    },
+    .paths = .{""},
+    .fingerprint = 0x48bf3a14d7ddd5c3,
+}

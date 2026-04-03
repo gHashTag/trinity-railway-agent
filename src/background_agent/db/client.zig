@@ -24,6 +24,7 @@ pub const MessageType = enum(u8) {
     CommandComplete = 'C',
     ErrorResponse = 'E',
     Query = 'Q',
+    DataRow = 'D', // Added for PostgreSQL wire protocol
     Terminate = 'X',
 };
 
@@ -130,14 +131,14 @@ pub const PostgresClient = struct {
 
         const stream = self.stream.?;
         var result = QueryResult{
-            .rows = std.ArrayList(Row).init(self.allocator),
+            .rows = std.ArrayList(Row).empty,
             .affected_rows = 0,
         };
         errdefer {
             for (result.rows.items) |*row| {
                 row.deinit(self.allocator);
             }
-            result.rows.deinit();
+            result.rows.deinit(self.allocator);
         }
 
         // Send query message
@@ -147,7 +148,7 @@ pub const PostgresClient = struct {
         _ = try stream.writeAll(query_msg);
 
         // Read response
-        try self.readQueryResponse(&stream, &result);
+        try self.readQueryResponse(@constCast(&stream), &result);
 
         return result;
     }
@@ -254,7 +255,7 @@ pub const PostgresClient = struct {
                     try self.readDataRow(stream, msg_len_u32 - 4, result);
                 },
                 @intFromEnum(MessageType.CommandComplete) => {
-                    _ = try self.skipMessage(stream, msg_len_u32 - 4);
+                    _ = try skipMessage(stream, msg_len_u32 - 4);
                 },
                 @intFromEnum(MessageType.ReadyForQuery) => {
                     var status_buf: [1]u8 = undefined;
@@ -267,7 +268,7 @@ pub const PostgresClient = struct {
                     return readErrorResponse(stream, msg_len_u32 - 4);
                 },
                 else => {
-                    _ = try self.skipMessage(stream, msg_len_u32 - 4);
+                    _ = try skipMessage(stream, msg_len_u32 - 4);
                 },
             }
         }
@@ -281,8 +282,8 @@ pub const PostgresClient = struct {
         const col_count = std.mem.readInt(u16, &col_count_buf, .big);
 
         var row = Row{
-            .columns = std.ArrayList([]const u8).init(self.allocator),
-            .values = std.ArrayList([]const u8).init(self.allocator),
+            .columns = try std.ArrayList([]const u8).initCapacity(self.allocator, 16),
+            .values = try std.ArrayList([]const u8).initCapacity(self.allocator, 16),
         };
         errdefer row.deinit(self.allocator);
 
@@ -296,20 +297,20 @@ pub const PostgresClient = struct {
 
             if (value_len == -1) {
                 // NULL value
-                try row.columns.append("");
-                try row.values.append("");
+                try row.columns.append(self.allocator, "");
+                try row.values.append(self.allocator, "");
             } else {
                 const value_len_usize = @as(usize, @intCast(value_len));
                 const value_buf = try self.allocator.alloc(u8, value_len_usize);
                 const value_bytes = try stream.read(value_buf[0..value_len_usize]);
                 if (value_bytes != value_len_usize) return error.InvalidMessage;
-                try row.values.append(value_buf[0..value_len_usize]);
-                try row.columns.append(""); // Column name not in DataRow
-                remaining -= value_len_usize;
+                try row.values.append(self.allocator, value_buf[0..value_len_usize]);
+                try row.columns.append(self.allocator, ""); // Column name not in DataRow
+                remaining -= @as(u32, @intCast(value_len_usize));
             }
         }
 
-        try result.rows.append(try row.clone(self.allocator));
+        try result.rows.append(self.allocator, try row.clone(self.allocator));
         row.deinit(self.allocator);
     }
 
@@ -386,19 +387,19 @@ pub const Row = struct {
         for (self.values.items) |val| {
             allocator.free(val);
         }
-        self.columns.deinit();
-        self.values.deinit();
+        self.columns.deinit(allocator);
+        self.values.deinit(allocator);
     }
 
     pub fn clone(self: *const Row, allocator: Allocator) !Row {
-        var new_columns = std.ArrayList([]const u8).init(allocator);
-        var new_values = std.ArrayList([]const u8).init(allocator);
+        var new_columns = try std.ArrayList([]const u8).initCapacity(allocator, 16);
+        var new_values = try std.ArrayList([]const u8).initCapacity(allocator, 16);
 
         for (self.columns.items) |col| {
-            try new_columns.append(try allocator.dupe(u8, col));
+            try new_columns.append(allocator, try allocator.dupe(u8, col));
         }
         for (self.values.items) |val| {
-            try new_values.append(try allocator.dupe(u8, val));
+            try new_values.append(allocator, try allocator.dupe(u8, val));
         }
 
         return Row{
