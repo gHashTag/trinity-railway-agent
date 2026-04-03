@@ -48,11 +48,13 @@ RUN chmod +x /app/background-agent-api
 USER trinity
 WORKDIR /app
 
-EXPOSE 3000
-ENV PORT=3000
+# Health check wrapper script
+RUN echo '#!/bin/sh\ncurl -f http://localhost:$PORT/health || exit 1\n' > /app/healthcheck.sh && \
+    chmod +x /app/healthcheck.sh && \
+    chown trinity:trinity /app/healthcheck.sh
 
-# Health check: use curl to test /health endpoint
+# Health check: use wrapper script
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
-    CMD curl -f http://localhost:3000/health || exit 1
+    CMD ["/app/healthcheck.sh"]
 
 CMD ["/app/background-agent-api"]
