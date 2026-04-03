@@ -6,10 +6,13 @@ const std = @import("std");
 pub fn main() !u8 {
     std.log.info("=== Minimal Test Server Starting ===", .{});
 
-    const port_str = std.process.getEnvVarOwned(std.heap.page_allocator, "PORT") catch "3000";
+    const allocator = std.heap.page_allocator;
+    const port_str = std.process.getEnvVarOwned(allocator, "PORT") catch "3000";
+    defer allocator.free(port_str);
     const port = std.fmt.parseInt(u16, port_str, 10) catch 3000;
 
-    std.log.info("Port: {}", .{port});
+    std.log.info("PORT from env: {s}", .{port_str});
+    std.log.info("Using port: {}", .{port});
 
     const address = try std.net.Address.parseIp("0.0.0.0", port);
     var server = try std.net.Address.listen(address, .{ .reuse_address = true });
