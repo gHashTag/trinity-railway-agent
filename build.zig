@@ -2105,11 +2105,6 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(background_agent_api);
 
-    const run_background_agent = b.addRunArtifact(background_agent_api);
-    if (b.args) |args| run_background_agent.addArgs(args);
-    const background_agent_step = b.step("background-agent-api", "Run Background Agent API (Zig replacement for TypeScript API)");
-    background_agent_step.dependOn(&run_background_agent.step);
-
     // ═══════════════════════════════════════════════════════════════════════════
     // CLUTRR Benchmark — Compositional Language Understanding & Textual Relational Reasoning
     // ═══════════════════════════════════════════════════════════════════════════
