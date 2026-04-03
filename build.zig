@@ -8,12 +8,16 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // Background Agent API
-    const background_agent_api = b.addExecutable(.{
-        .name = "background-agent-api",
+    // Background Agent API - Zig 0.15.2 uses createModule()
+    const background_agent_api_module = b.createModule(.{
         .root_source_file = b.path("src/background_agent/main.zig"),
         .target = target,
         .optimize = optimize,
+    });
+
+    const background_agent_api = b.addExecutable(.{
+        .name = "background-agent-api",
+        .root_module = background_agent_api_module,
     });
 
     // Add zodd dependency
@@ -21,7 +25,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    background_agent_api.root_module.addImport(zodd.module("zodd"), "zodd");
+    background_agent_api.root_module.addImport("zodd", zodd.module("zodd"));
 
     b.installArtifact(background_agent_api);
 
