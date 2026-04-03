@@ -1,0 +1,21 @@
+# Docker ignore for Railway build deployment
+# Need source files for zig build, exclude large unnecessary files
+
+# Build artifacts
+zig-out/
+*.o
+*.a
+
+# Git and CI (will be added by git clone)
+.git/
+
+# Large data patterns
+*.jsonl
+*.vcd
+
+# Claude state
+.claude/
+
+# Test artifacts
+test_import
+client.o
