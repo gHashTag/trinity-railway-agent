@@ -32,8 +32,8 @@ RUN mkdir -p /artifacts && find /app/.zig-cache -name "background-agent-api" -ty
 # Stage 2: Runtime
 FROM ubuntu:24.04
 
-# Install curl for healthcheck
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# Install curl for healthcheck and strace for debugging
+RUN apt-get update && apt-get install -y curl strace && rm -rf /var/lib/apt/lists/*
 
 # Create user with home directory
 RUN useradd -m -u 1001 trinity
@@ -45,6 +45,17 @@ RUN mkdir -p /app && chown trinity:trinity /app
 COPY --from=builder --chown=trinity:trinity /artifacts/background-agent-api /app/background-agent-api
 RUN chmod +x /app/background-agent-api
 
+# Create wrapper script for logging
+RUN echo '#!/bin/sh\n\
+echo "=== Starting Background Agent ===" && \n\
+echo "Binary location: /app/background-agent-api" && \n\
+ls -la /app/background-agent-api && \n\
+echo "Environment:" && \n\
+env | sort && \n\
+echo "=== Running binary ===" && \n\
+exec /app/background-agent-api 2>&1\n\
+' > /app/run.sh && chmod +x /app/run.sh && chown trinity:trinity /app/run.sh
+
 USER trinity
 WORKDIR /app
 
@@ -52,8 +63,7 @@ EXPOSE 3000
 ENV PORT=3000
 
 # Health check: use curl to test /health endpoint
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
     CMD curl -f http://localhost:3000/health || exit 1
 
-# Use shell wrapper to capture both stdout and stderr
-CMD ["/app/background-agent-api"]
+CMD ["/app/run.sh"]
