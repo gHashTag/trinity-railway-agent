@@ -7,10 +7,9 @@ const net = std.net;
 
 const Config = @import("config.zig").Config;
 const Sessions = @import("db/sessions.zig");
-const RailwayClient = @import("railway/client.zig").RailwayClient;
-const railwayInit = @import("railway/client.zig").init;
-const railwayCreateService = @import("railway/client.zig").createService;
-const railwayDeleteService = @import("railway/client.zig").deleteService;
+const railway = @import("railway/client.zig");
+const RailwayClient = railway.RailwayClient;
+const railwayInit = railway.init;
 const Jwt = @import("auth/jwt.zig");
 const PostgresClient = @import("db/client.zig").PostgresClient;
 
@@ -204,14 +203,14 @@ pub const Server = struct {
         };
 
         // Route and handle request
-        const response = try routeRequest(self,&request_context);
+        const response = try routeRequest(self, &request_context);
 
         // Send response
-        try sendResponse(self,&connection.stream, response);
+        try sendResponse(self, connection.stream, response);
     }
 
     /// Route request to handler
-    fn routeRequest(self: *Server, ctx: *const RequestContext) !Response {
+    pub fn routeRequest(self: *Server, ctx: *const RequestContext) !Response {
         // GET /health
         if (std.mem.eql(u8, ctx.path, "/health")) {
             return Response{
@@ -231,35 +230,35 @@ pub const Server = struct {
 
         // GET /api/sessions
         if (std.mem.eql(u8, ctx.path, "/api/sessions")) {
-            return handleListSessions(self,);
+            return handleListSessions(self);
         }
 
         // POST /api/sessions
         if (std.mem.eql(u8, ctx.path, "/api/sessions") and std.mem.eql(u8, ctx.method, "POST")) {
-            return handleCreateSession(self,ctx.body);
+            return handleCreateSession(self, ctx.body);
         }
 
         // GET /api/sessions/:id
         if (std.mem.startsWith(u8, ctx.path, "/api/sessions/")) {
             const session_id = ctx.path["/api/sessions/".len..];
-            return handleGetSession(self,session_id);
+            return handleGetSession(self, session_id);
         }
 
         // DELETE /api/sessions/:id
         if (std.mem.eql(u8, ctx.method, "DELETE") and std.mem.startsWith(u8, ctx.path, "/api/sessions/")) {
             const session_id = ctx.path["/api/sessions/".len..];
-            return handleDeleteSession(self,session_id);
+            return handleDeleteSession(self, session_id);
         }
 
         // POST /api/containers
         if (std.mem.eql(u8, ctx.path, "/api/containers") and std.mem.eql(u8, ctx.method, "POST")) {
-            return handleCreateContainer(self,ctx.body);
+            return handleCreateContainer(self, ctx.body);
         }
 
         // DELETE /api/containers/:id
         if (std.mem.eql(u8, ctx.method, "DELETE") and std.mem.startsWith(u8, ctx.path, "/api/containers/")) {
             const service_id = ctx.path["/api/containers/".len..];
-            return handleDeleteContainer(self,service_id);
+            return handleDeleteContainer(self, service_id);
         }
 
         return Response{
@@ -272,19 +271,20 @@ pub const Server = struct {
     fn handleListSessions(self: *Server) !Response {
         const allocator = self.allocator;
 
-        const sessions = try Sessions.listSessions(allocator, &self.db_client);
+        var sessions = try Sessions.listSessions(allocator, &self.db_client);
         defer {
             for (sessions.items) |*s| {
                 allocator.free(s.id);
                 allocator.free(s.name);
                 allocator.free(s.status);
                 allocator.free(s.railway_service_id);
+                allocator.free(s.soul_file);
             }
-            @constCast(&sessions).deinit(allocator);
+            sessions.deinit(allocator);
         }
 
         // Build JSON response
-        var json = try std.ArrayList(u8).initCapacity(allocator, 1024);
+        var json = try std.ArrayList(u8).initCapacity(allocator, 512);
         try json.appendSlice(allocator, "{\"sessions\":[");
         for (sessions.items, 0..) |s, i| {
             if (i > 0) try json.append(allocator, ',');
@@ -390,7 +390,7 @@ pub const Server = struct {
         const allocator = self.allocator;
 
         // Check Railway client
-        const railway_client = self.railway_client orelse return Response{
+        if (self.railway_client == null) return Response{
             .status = 503,
             .body = "{\"error\":\"Railway not available in local mode\"}",
         };
@@ -404,7 +404,7 @@ pub const Server = struct {
         defer parsed.deinit();
 
         // Create Railway service
-        const result = railwayCreateService(&railway_client,parsed.value.environment_id, parsed.value.name, parsed.value.image) catch |err| {
+        const result = railway.createService(&self.railway_client.?, parsed.value.environment_id, parsed.value.name, parsed.value.image) catch |err| {
             return Response{
                 .status = 500,
                 .body = try std.fmt.allocPrint(allocator, "{{\"error\":\"{s}\"}}", .{@errorName(err)}),
@@ -436,13 +436,13 @@ pub const Server = struct {
         const allocator = self.allocator;
 
         // Check Railway client
-        const railway_client = self.railway_client orelse return Response{
+        if (self.railway_client == null) return Response{
             .status = 503,
             .body = "{\"error\":\"Railway not available in local mode\"}",
         };
 
         // Delete Railway service
-        _ = railwayDeleteService(&railway_client,service_id) catch |err| {
+        _ = railway.deleteService(&self.railway_client.?, service_id) catch |err| {
             return Response{
                 .status = 500,
                 .body = try std.fmt.allocPrint(allocator, "{{\"error\":\"{s}\"}}", .{@errorName(err)}),
@@ -468,9 +468,9 @@ pub const Server = struct {
     }
 
     /// Send HTTP response
-    fn sendResponse(self: *Server, stream: *const net.Stream, response: Response) !void {
+    fn sendResponse(self: *Server, stream: net.Stream, response: Response) !void {
         // Build headers
-        var headers = try std.ArrayList(u8).initCapacity(self.allocator, 512);
+        var headers = try std.ArrayList(u8).initCapacity(self.allocator, 256);
         defer headers.deinit(self.allocator);
 
         try headers.writer(self.allocator).print(
