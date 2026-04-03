@@ -25,7 +25,7 @@ WORKDIR /app
 COPY . ./
 
 # Build background-agent-api with ReleaseSafe
-RUN zig build -Doptimize=ReleaseSafe background-agent-api
+RUN zig build -Doptimize=ReleaseSafe
 
 # Stage 2: Runtime - Use Ubuntu minimal
 FROM ubuntu:24.04
